@@ -1,3 +1,4 @@
+
 from dataclasses import dataclass
 
 
@@ -29,3 +30,13 @@ class BERTConfig:
     cls_token_id: int = 1
     sep_token_id: int = 2
     mask_token_id: int = 3
+    unk_token_id: int = 4
+
+    # Model Initialization
+    layer_norm_eps: float = 1e-12
+    initializer_range: float = 0.02
+
+    def __post_init__(self):
+        assert self.hidden_size % self.num_attention_heads == 0, (
+            "hidden_size must be divisible by num_attention_heads"
+        )
