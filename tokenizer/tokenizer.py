@@ -2,144 +2,75 @@
 from pathlib import Path
 
 from tokenizers import Tokenizer
-from tokenizers import decoders
-from tokenizers import models
-from tokenizers import normalizers
-from tokenizers import pre_tokenizers
-from tokenizers import processors
-from tokenizers import trainers
-
-from config import BERTConfig
 
 
-# 프로젝트 경로
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+class BertTokenizer:
 
-# 데이터 경로
-CORPUS_PATH = PROJECT_ROOT / "data" / "corpus.txt"
+    def __init__(self, tokenizer_path):
 
-# Tokenizer 저장 경로
-OUTPUT_PATH = PROJECT_ROOT / "tokenizer" / "tokenizer.json"
+        tokenizer_path = Path(tokenizer_path)
 
-
-def train_tokenizer():
-
-    config = BERTConfig()
-
-    # 1. 데이터 확인
-    if not CORPUS_PATH.exists():
-        raise FileNotFoundError(
-            f"Corpus not found: {CORPUS_PATH}"
-        )
-
-    if CORPUS_PATH.stat().st_size == 0:
-        raise ValueError("Corpus file is empty.")
-
-    # 2. WordPiece 모델 생성
-    tokenizer = Tokenizer(
-        models.WordPiece(
-            unk_token="[UNK]"
-        )
-    )
-
-    # 3. 텍스트 정규화
-    tokenizer.normalizer = normalizers.BertNormalizer(
-        clean_text=True,
-        handle_chinese_chars=True,
-        strip_accents=False,
-        lowercase=False
-    )
-
-    # 4. Pre-tokenization
-    tokenizer.pre_tokenizer = (
-        pre_tokenizers.BertPreTokenizer()
-    )
-
-    # 5. WordPiece Trainer 설정
-    special_tokens = [
-        "[PAD]",
-        "[CLS]",
-        "[SEP]",
-        "[MASK]",
-        "[UNK]"
-    ]
-
-    trainer = trainers.WordPieceTrainer(
-        vocab_size=config.vocab_size,
-        min_frequency=2,
-        show_progress=True,
-        special_tokens=special_tokens,
-        continuing_subword_prefix="##"
-    )
-
-    # 6. Vocabulary 학습
-    tokenizer.train(
-        files=[str(CORPUS_PATH)],
-        trainer=trainer
-    )
-
-    # 7. Special Token ID 검증
-    expected_ids = {
-        "[PAD]": config.pad_token_id,
-        "[CLS]": config.cls_token_id,
-        "[SEP]": config.sep_token_id,
-        "[MASK]": config.mask_token_id,
-        "[UNK]": config.unk_token_id
-    }
-
-    for token, expected_id in expected_ids.items():
-
-        actual_id = tokenizer.token_to_id(token)
-
-        if actual_id != expected_id:
-            raise ValueError(
-                f"{token}: expected {expected_id}, "
-                f"got {actual_id}"
+        if not tokenizer_path.exists():
+            raise FileNotFoundError(
+                f"Tokenizer not found: {tokenizer_path}"
             )
 
-    # 8. BERT 입력 형식 설정
-    cls_id = tokenizer.token_to_id("[CLS]")
-    sep_id = tokenizer.token_to_id("[SEP]")
-
-    tokenizer.post_processor = (
-        processors.TemplateProcessing(
-            single="[CLS] $A [SEP]",
-            pair="[CLS] $A [SEP] $B:1 [SEP]:1",
-            special_tokens=[
-                ("[CLS]", cls_id),
-                ("[SEP]", sep_id)
-            ]
-        )
-    )
-
-    # 9. WordPiece Decoder
-    tokenizer.decoder = decoders.WordPiece(
-        prefix="##"
-    )
-
-    # 10. Tokenizer 저장
-    OUTPUT_PATH.parent.mkdir(
-        parents=True,
-        exist_ok=True
-    )
-
-    tokenizer.save(str(OUTPUT_PATH))
-
-    # 11. 결과 확인
-    actual_vocab_size = tokenizer.get_vocab_size()
-
-    print("=" * 40)
-    print("Tokenizer training completed!")
-    print(f"Vocabulary size: {actual_vocab_size}")
-    print(f"Tokenizer saved: {OUTPUT_PATH}")
-    print("=" * 40)
-
-    if actual_vocab_size != config.vocab_size:
-        print(
-            "[WARNING] Update config.py vocab_size "
-            f"to {actual_vocab_size} before model construction."
+        # 학습된 Tokenizer 불러오기
+        self.tokenizer = Tokenizer.from_file(
+            str(tokenizer_path)
         )
 
+        # Special Token ID
+        self.pad_token_id = self.tokenizer.token_to_id("[PAD]")
+        self.cls_token_id = self.tokenizer.token_to_id("[CLS]")
+        self.sep_token_id = self.tokenizer.token_to_id("[SEP]")
+        self.mask_token_id = self.tokenizer.token_to_id("[MASK]")
+        self.unk_token_id = self.tokenizer.token_to_id("[UNK]")
 
-if __name__ == "__main__":
-    train_tokenizer()
+        # Vocabulary 크기
+        self.vocab_size = self.tokenizer.get_vocab_size()
+
+        # Special Token 확인
+        special_ids = [
+            self.pad_token_id,
+            self.cls_token_id,
+            self.sep_token_id,
+            self.mask_token_id,
+            self.unk_token_id
+        ]
+
+        if any(token_id is None for token_id in special_ids):
+            raise ValueError("Missing special tokens.")
+
+    def tokenize(self, text):
+
+        encoding = self.tokenizer.encode(
+            text,
+            add_special_tokens=False
+        )
+
+        return encoding.tokens
+
+    def encode(self, text, text_pair=None):
+
+        encoding = self.tokenizer.encode(
+            text,
+            text_pair
+        )
+
+        return {
+            "input_ids": encoding.ids,
+            "token_type_ids": encoding.type_ids,
+            "attention_mask": encoding.attention_mask
+        }
+
+    def decode(self, ids, skip_special_tokens=True):
+
+        return self.tokenizer.decode(
+            ids,
+            skip_special_tokens=skip_special_tokens
+        )
+
+    def get_vocab_size(self):
+
+        return self.tokenizer.get_vocab_size()
